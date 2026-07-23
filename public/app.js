@@ -1,21 +1,23 @@
-let socket = io();
+let socket = typeof io !== 'undefined' ? io() : null;
 let currentUser = null;
 let currentChatPartner = null;
 
 // ==========================================
-// 1️⃣ الاستماع للتحديثات الحية (Socket Events)
+// 1️⃣ الاستماع للأحداث الحية
 // ==========================================
 
-socket.on('reload-users-list', () => {
-    if (currentUser) loadUsersList();
-});
+if (socket) {
+    socket.on('reload-users-list', () => {
+        if (currentUser) loadUsersList();
+    });
 
-socket.on('update-user-status', () => {
-    if (currentUser) loadUsersList();
-});
+    socket.on('update-user-status', () => {
+        if (currentUser) loadUsersList();
+    });
+}
 
 function listenForFriendRequests() {
-    if (!currentUser) return;
+    if (!currentUser || !socket) return;
     socket.on(`new-friend-request-${currentUser.username}`, () => {
         loadFriendsData();
         alert('وصلك طلب صداقة جديد!');
@@ -23,7 +25,7 @@ function listenForFriendRequests() {
 }
 
 // ==========================================
-// 2️⃣ تسجيل الدخول والتسجيل
+// 2️⃣ تسجيل الدخول والتسجيل (معدلة ومضمونة)
 // ==========================================
 
 async function handleAuth(action) {
@@ -53,12 +55,14 @@ async function handleAuth(action) {
         if (data.success) {
             currentUser = data.user;
             
-            document.getElementById('auth-screen').classList.add('hidden');
-            document.getElementById('app-screen').classList.remove('hidden');
+            document.getElementById('auth-screen')?.classList.add('hidden');
+            document.getElementById('app-screen')?.classList.remove('hidden');
             
-            socket.emit('user-online', currentUser.username);
+            if (socket) {
+                socket.emit('user-online', currentUser.username);
+            }
+            
             listenForFriendRequests();
-            
             loadGlobalChat();
             loadUsersList();
             loadFriendsData();
@@ -67,12 +71,12 @@ async function handleAuth(action) {
         }
     } catch (err) {
         console.error('خطأ في الاتصال:', err);
-        alert('حدث خطأ أثناء الاتصال بالسيرفر، تأكد من تشغيل السيرفر بشكل صحيح.');
+        alert('حدث خطأ أثناء الاتصال بالسيرفر.');
     }
 }
 
 // ==========================================
-// 3️⃣ التنقل بين التبويبات (Tabs)
+// 3️⃣ التنقل بين التبويبات
 // ==========================================
 
 function switchTab(tabName) {
@@ -88,7 +92,7 @@ function switchTab(tabName) {
 }
 
 // ==========================================
-// 4️⃣ عرض قائمة جميع المستخدمين
+// 4️⃣ عرض المستخدمين والبروفايل
 // ==========================================
 
 async function loadUsersList() {
@@ -129,19 +133,19 @@ async function loadUsersList() {
     }
 }
 
-// ==========================================
-// 5️⃣ عرض بروفايل المستخدم وإرسال طلب الصداقة
-// ==========================================
-
 async function viewUserProfile(username) {
     const res = await fetch(`/api/user-info?username=${username}`);
     const u = await res.json();
     
     const fallbackAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ccc'><path d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/></svg>";
 
-    document.getElementById('view-user-avatar').src = u.avatar || fallbackAvatar;
-    document.getElementById('view-user-name').innerText = u.username;
-    document.getElementById('view-user-details').innerText = `العمر: ${u.age || 20} | الحالة: ${u.status || 'أعزب'}`;
+    const avatarEl = document.getElementById('view-user-avatar');
+    const nameEl = document.getElementById('view-user-name');
+    const detailsEl = document.getElementById('view-user-details');
+
+    if (avatarEl) avatarEl.src = u.avatar || fallbackAvatar;
+    if (nameEl) nameEl.innerText = u.username;
+    if (detailsEl) detailsEl.innerText = `العمر: ${u.age || 20} | الحالة: ${u.status || 'أعزب'}`;
     
     const chatBtn = document.getElementById('view-user-chat-btn');
     if (chatBtn) {
@@ -157,12 +161,16 @@ async function viewUserProfile(username) {
         friendBtn.onclick = () => sendFriendRequest(u.username);
     }
 
-    document.getElementById('user-profile-modal').classList.remove('hidden');
+    document.getElementById('user-profile-modal')?.classList.remove('hidden');
 }
 
 function closeProfileModal() {
-    document.getElementById('user-profile-modal').classList.add('hidden');
+    document.getElementById('user-profile-modal')?.classList.add('hidden');
 }
+
+// ==========================================
+// 5️⃣ الأصدقاء والطلبات
+// ==========================================
 
 async function sendFriendRequest(targetUser) {
     const res = await fetch('/api/friend-request', {
@@ -173,10 +181,6 @@ async function sendFriendRequest(targetUser) {
     const data = await res.json();
     alert(data.msg);
 }
-
-// ==========================================
-// 6️⃣ إدراة الأصدقاء والطلبات المعلقة
-// ==========================================
 
 async function loadFriendsData() {
     if (!currentUser) return;
@@ -233,7 +237,7 @@ async function respondRequest(targetUser, action) {
 }
 
 // ==========================================
-// 7️⃣ الشات العام والمحادثات الخاصة
+// 6️⃣ الدردشة العامة والخاصة
 // ==========================================
 
 async function loadGlobalChat() {
@@ -244,17 +248,19 @@ async function loadGlobalChat() {
     const msgs = await res.json();
     msgs.forEach(m => renderMessage(container, m));
 
-    socket.off('new-global-msg');
-    socket.on('new-global-msg', (msg) => {
-        renderMessage(container, msg);
-    });
+    if (socket) {
+        socket.off('new-global-msg');
+        socket.on('new-global-msg', (msg) => {
+            renderMessage(container, msg);
+        });
+    }
 }
 
 function sendGlobalMessage() {
     const input = document.getElementById('global-input');
     if (!input) return;
     const text = input.value.trim();
-    if (!text) return;
+    if (!text || !socket) return;
 
     socket.emit('send-global-msg', {
         sender: currentUser.username,
@@ -300,18 +306,25 @@ async function openPrivateChat(targetUsername) {
     const history = await res.json();
     history.forEach(m => renderMessage(msgContainer, m));
 
-    const chatKey = [currentUser.username, targetUsername].sort().join('_');
-    socket.off(`private-msg-${chatKey}`);
-    socket.on(`private-msg-${chatKey}`, (msg) => {
-        renderMessage(msgContainer, msg);
-    });
+    if (socket) {
+        const chatKey = [currentUser.username, targetUsername].sort().join('_');
+        socket.off(`private-msg-${chatKey}`);
+        socket.on(`private-msg-${chatKey}`, (msg) => {
+            renderMessage(msgContainer, msg);
+        });
+    }
+}
+
+function closePrivateChatWindow() {
+    document.getElementById('chats-list-view')?.classList.remove('hidden');
+    document.getElementById('private-chat-window')?.classList.add('hidden');
 }
 
 function sendPrivateMessage() {
     const input = document.getElementById('private-input');
     if (!input) return;
     const text = input.value.trim();
-    if (!text || !currentChatPartner) return;
+    if (!text || !currentChatPartner || !socket) return;
 
     const msgData = {
         sender: currentUser.username,
