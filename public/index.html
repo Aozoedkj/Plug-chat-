@@ -3,23 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>تطبيق الدردشة</title>
+    <title>Plug Chat</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
     <!-- 1️⃣ شاشة التسجيل والدخول -->
     <div id="auth-screen" class="auth-container">
-        <h2>تسجيل الدخول / حساب جديد</h2>
+        <h2>⚡ Plug Chat ⚡</h2>
+        
         <div class="form-group">
             <input type="text" id="auth-username" placeholder="اسم المستخدم" required>
         </div>
+        
         <div class="form-group">
             <input type="password" id="auth-password" placeholder="كلمة السر" required>
         </div>
+
         <div class="form-group">
             <input type="number" id="auth-age" placeholder="العمر (اختياري)" value="20">
         </div>
+
         <div class="form-group">
             <select id="auth-status">
                 <option value="أعزب">أعزب</option>
@@ -27,7 +31,7 @@
                 <option value="متزوج">متزوج</option>
             </select>
         </div>
-        
+
         <div class="buttons-group">
             <button type="button" onclick="handleAuth('login')">تسجيل الدخول</button>
             <button type="button" onclick="handleAuth('register')">إنشاء حساب جديد</button>
@@ -37,7 +41,6 @@
     <!-- 2️⃣ الشاشة الرئيسية للتطبيق -->
     <div id="app-screen" class="app-container hidden">
         
-        <!-- الشريط السفلي / العلوي للتنقل -->
         <nav class="nav-bar">
             <button class="nav-btn active" onclick="switchTab('global')">الدردشة العامة</button>
             <button class="nav-btn" onclick="switchTab('users')">المستخدمين</button>
@@ -51,7 +54,7 @@
             <div id="global-messages" class="messages-box"></div>
             <div class="input-box">
                 <input type="text" id="global-input" placeholder="اكتب رسالة...">
-                <button onclick="sendGlobalMessage()">إرسال</button>
+                <button type="button" onclick="sendGlobalMessage()">إرسال</button>
             </div>
         </div>
 
@@ -78,12 +81,12 @@
             </div>
 
             <div id="private-chat-window" class="hidden">
-                <button onclick="document.getElementById('chats-list-view').classList.remove('hidden'); document.getElementById('private-chat-window').classList.add('hidden');">← العودة للمحادثات</button>
+                <button type="button" onclick="closePrivateChatWindow()">← العودة للمحادثات</button>
                 <h3 id="chat-with-name">محادثة مع...</h3>
                 <div id="private-messages" class="messages-box"></div>
                 <div class="input-box">
                     <input type="text" id="private-input" placeholder="اكتب رسالة خاصة...">
-                    <button onclick="sendPrivateMessage()">إرسال</button>
+                    <button type="button" onclick="sendPrivateMessage()">إرسال</button>
                 </div>
             </div>
         </div>
@@ -97,12 +100,12 @@
             <img id="view-user-avatar" src="" alt="Avatar" class="profile-avatar">
             <h3 id="view-user-name"></h3>
             <p id="view-user-details"></p>
-            <button id="view-user-add-friend-btn">إرسال طلب صداقة</button>
-            <button id="view-user-chat-btn">مراسلة خاصة</button>
+            <button type="button" id="view-user-add-friend-btn">إرسال طلب صداقة</button>
+            <button type="button" id="view-user-chat-btn">مراسلة خاصة</button>
         </div>
     </div>
 
-    <!-- استدعاء المكتبات والسكربت -->
+    <!-- المكتبات للربط -->
     <script src="/socket.io/socket.io.js"></script>
     <script src="app.js"></script>
 </body>
