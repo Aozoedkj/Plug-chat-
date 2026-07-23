@@ -9,11 +9,15 @@
 </head>
 <body>
 
+    <!-- 🔒 شاشة المصادقة (تسجيل الدخول / إنشاء حساب) -->
     <div id="auth-screen" class="card">
         <h2>⚡ Plug Chat ⚡</h2>
+        
         <input type="text" id="auth-username" placeholder="اسم المستخدم">
         <input type="password" id="auth-password" placeholder="كلمة السر">
-        <div id="register-fields">
+
+        <!-- حقول إضافية لإنشاء الحساب الجديد فقط -->
+        <div id="register-fields" class="hidden">
             <input type="number" id="auth-age" placeholder="العمر" value="20">
             <select id="auth-status">
                 <option value="أعزب">أعزب</option>
@@ -21,11 +25,18 @@
                 <option value="مخطوب">مخطوب</option>
             </select>
         </div>
-        <button onclick="handleAuth('login')">تسجيل الدخول</button>
-        <button onclick="handleAuth('register')" class="btn-alt">إنشاء حساب جديد</button>
+
+        <button id="login-btn" onclick="handleAuth('login')">تسجيل الدخول</button>
+        <button id="register-submit-btn" class="btn-alt hidden" onclick="handleAuth('register')">تأكيد إنشاء الحساب</button>
+        
+        <hr class="auth-divider">
+        
+        <button id="toggle-auth-btn" class="btn-secondary" onclick="toggleAuthMode()">إنشاء حساب جديد</button>
     </div>
 
+    <!-- 🌐 واجهة التطبيق والشريط العلوي (تظهر بعد الدخول فقط) -->
     <div id="app-screen" class="hidden">
+        
         <nav class="top-nav">
             <div class="logo">Plug Chat</div>
             <div class="nav-icons">
@@ -38,6 +49,7 @@
         </nav>
 
         <main class="content">
+            <!-- 👤 الملف الشخصي -->
             <section id="tab-profile" class="tab-page">
                 <h3>الملف الشخصي</h3>
                 <div class="profile-box">
@@ -56,6 +68,7 @@
                 </div>
             </section>
 
+            <!-- 👥 الأصدقاء -->
             <section id="tab-friends" class="tab-page hidden">
                 <h3>طلبات الصداقة</h3>
                 <div id="requests-list"></div>
@@ -64,35 +77,51 @@
                 <div id="friends-list"></div>
             </section>
 
+            <!-- 🌐 المستخدمين -->
             <section id="tab-users" class="tab-page hidden">
                 <h3>جميع مستخدمي المنصة</h3>
                 <div id="users-grid" class="grid"></div>
             </section>
 
+            <!-- 💬 المحادثات الخاصة -->
             <section id="tab-chats" class="tab-page hidden">
-                <h3>المحادثات الخاصة</h3>
                 <div id="active-chats-list"></div>
-                <div id="private-chat-window" class="chat-window hidden">
-                    <div class="chat-header">
+                <div id="private-chat-window" class="chat-container hidden">
+                    <div class="chat-header-title">
                         <span id="chat-with-name"></span>
-                        <button onclick="startCall()">📞 اتصال صوتي</button>
+                        <button onclick="startCall()" class="call-btn">📞 اتصال</button>
                     </div>
                     <div id="private-messages" class="messages-area"></div>
-                    <div class="chat-inputs">
-                        <input type="text" id="p-msg-input" placeholder="اكتب رسالة...">
-                        <input type="file" id="p-file-input">
-                        <button onclick="sendPrivateMsg()">إرسال</button>
+                    
+                    <div class="chat-bar">
+                        <label class="icon-btn" title="إرفاق صورة أو فيديو">
+                            📷
+                            <input type="file" id="p-file-input" accept="image/*,video/*" onchange="sendPrivateMedia(this)" hidden>
+                        </label>
+                        <button class="icon-btn" id="p-mic-btn" onclick="toggleRecord('private')" title="تسجيل صوت">🎤</button>
+                        <input type="text" id="p-msg-input" placeholder="اكتب رسالة..." onkeypress="if(event.key==='Enter') sendPrivateMsg()">
+                        <button class="icon-btn like-btn" onclick="sendPrivateLike()" title="إرسال إعجاب">👍</button>
+                        <button class="send-btn" onclick="sendPrivateMsg()">إرسال</button>
                     </div>
                 </div>
             </section>
 
+            <!-- 📢 الشات الجماعي -->
             <section id="tab-global" class="tab-page hidden">
-                <h3>الشات الجماعي العام</h3>
-                <div id="global-messages" class="messages-area"></div>
-                <div class="chat-inputs">
-                    <input type="text" id="g-msg-input" placeholder="اكتب للجميع...">
-                    <input type="file" id="g-file-input">
-                    <button onclick="sendGlobalMsg()">إرسال</button>
+                <div class="chat-container">
+                    <div class="chat-header-title">💬 الشات الجماعي العام</div>
+                    <div id="global-messages" class="messages-area"></div>
+                    
+                    <div class="chat-bar">
+                        <label class="icon-btn" title="إرفاق صورة أو فيديو">
+                            📷
+                            <input type="file" id="g-file-input" accept="image/*,video/*" onchange="sendGlobalMedia(this)" hidden>
+                        </label>
+                        <button class="icon-btn" id="g-mic-btn" onclick="toggleRecord('global')" title="تسجيل صوت">🎤</button>
+                        <input type="text" id="g-msg-input" placeholder="اكتب رسالة..." onkeypress="if(event.key==='Enter') sendGlobalMsg()">
+                        <button class="icon-btn like-btn" onclick="sendGlobalLike()" title="إرسال إعجاب">👍</button>
+                        <button class="send-btn" onclick="sendGlobalMsg()">إرسال</button>
+                    </div>
                 </div>
             </section>
         </main>
