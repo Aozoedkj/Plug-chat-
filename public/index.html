@@ -5,108 +5,172 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Plug Chat</title>
     <link rel="stylesheet" href="style.css">
+    <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
 
-    <!-- 1️⃣ شاشة التسجيل والدخول -->
-    <div id="auth-screen" class="auth-container">
+    <!-- 🔒 شاشة المصادقة -->
+    <div id="auth-screen" class="card">
         <h2>⚡ Plug Chat ⚡</h2>
         
-        <div class="form-group">
-            <input type="text" id="auth-username" placeholder="اسم المستخدم" required>
-        </div>
-        
-        <div class="form-group">
-            <input type="password" id="auth-password" placeholder="كلمة السر" required>
-        </div>
+        <input type="text" id="auth-username" placeholder="اسم المستخدم">
+        <input type="password" id="auth-password" placeholder="كلمة السر">
 
-        <div class="form-group">
-            <input type="number" id="auth-age" placeholder="العمر (اختياري)" value="20">
-        </div>
-
-        <div class="form-group">
+        <div id="register-fields" class="hidden">
+            <input type="number" id="auth-age" placeholder="العمر" value="20">
             <select id="auth-status">
                 <option value="أعزب">أعزب</option>
-                <option value="مرتبط">مرتبط</option>
                 <option value="متزوج">متزوج</option>
+                <option value="مخطوب">مخطوب</option>
             </select>
         </div>
 
-        <div class="buttons-group">
-            <button type="button" onclick="handleAuth('login')">تسجيل الدخول</button>
-            <button type="button" onclick="handleAuth('register')">إنشاء حساب جديد</button>
-        </div>
+        <button id="login-btn" onclick="handleAuth('login')">تسجيل الدخول</button>
+        <button id="register-submit-btn" class="btn-alt hidden" onclick="handleAuth('register')">تأكيد إنشاء الحساب</button>
+        
+        <hr class="auth-divider">
+        
+        <button id="toggle-auth-btn" class="btn-secondary" onclick="toggleAuthMode()">إنشاء حساب جديد</button>
     </div>
 
-    <!-- 2️⃣ الشاشة الرئيسية للتطبيق -->
-    <div id="app-screen" class="app-container hidden">
+    <!-- 🌐 واجهة التطبيق -->
+    <div id="app-screen" class="hidden">
         
-        <nav class="nav-bar">
-            <button class="nav-btn active" onclick="switchTab('global')">الدردشة العامة</button>
-            <button class="nav-btn" onclick="switchTab('users')">المستخدمين</button>
-            <button class="nav-btn" onclick="switchTab('friends')">الأصدقاء والطلبات</button>
-            <button class="nav-btn" onclick="switchTab('chats')">الرسائل الخاصة</button>
+        <nav class="top-nav">
+            <div class="logo">Plug Chat</div>
+            <div class="nav-icons">
+                <button onclick="switchTab('profile')" title="الملف الشخصي">👤</button>
+                <button onclick="switchTab('friends')" title="الأصدقاء">👥 <span id="req-count"></span></button>
+                <button onclick="switchTab('users')" title="المستخدمين">🌐</button>
+                <button onclick="switchTab('chats')" title="الدردشات الخاصة">💬</button>
+                <button onclick="switchTab('global')" title="الشات الجماعي">📢</button>
+            </div>
         </nav>
 
-        <!-- تبويب الدردشة العامة -->
-        <div id="tab-global" class="tab-content">
-            <h3>الدردشة العامة</h3>
-            <div id="global-messages" class="messages-box"></div>
-            <div class="input-box">
-                <input type="text" id="global-input" placeholder="اكتب رسالة...">
-                <button type="button" onclick="sendGlobalMessage()">إرسال</button>
-            </div>
-        </div>
-
-        <!-- تبويب المستخدمين -->
-        <div id="tab-users" class="tab-content hidden">
-            <h3>جميع المستخدمين</h3>
-            <div id="users-list-container" class="users-grid"></div>
-        </div>
-
-        <!-- تبويب الأصدقاء والطلبات -->
-        <div id="tab-friends" class="tab-content hidden">
-            <h3>طلبات الصداقة المعلقة</h3>
-            <div id="friend-requests-container"></div>
-            <hr>
-            <h3>قائمة أصدقائي</h3>
-            <div id="my-friends-container"></div>
-        </div>
-
-        <!-- تبويب المحادثات الخاصة -->
-        <div id="tab-chats" class="tab-content hidden">
-            <div id="chats-list-view">
-                <h3>محادثاتي الخاصة</h3>
-                <div id="chats-list-container"></div>
-            </div>
-
-            <div id="private-chat-window" class="hidden">
-                <button type="button" onclick="closePrivateChatWindow()">← العودة للمحادثات</button>
-                <h3 id="chat-with-name">محادثة مع...</h3>
-                <div id="private-messages" class="messages-box"></div>
-                <div class="input-box">
-                    <input type="text" id="private-input" placeholder="اكتب رسالة خاصة...">
-                    <button type="button" onclick="sendPrivateMessage()">إرسال</button>
+        <main class="content">
+            <!-- 👤 الملف الشخصي -->
+            <section id="tab-profile" class="tab-page">
+                <h3>الملف الشخصي</h3>
+                <div class="profile-box card">
+                    <img id="my-avatar" src="/kullanici.jpg" class="avatar-large">
+                    <input type="file" id="avatar-input" onchange="uploadAvatar()">
+                    <p>الاسم: <b id="my-username"></b></p>
+                    <label>العمر: <input type="number" id="my-age"></label>
+                    <label>الحالة الاجتماعية: 
+                        <select id="my-status">
+                            <option value="أعزب">أعزب</option>
+                            <option value="متزوج">متزوج</option>
+                            <option value="مخطوب">مخطوب</option>
+                        </select>
+                    </label>
+                    <button onclick="saveProfile()" class="btn-alt">حفظ التغيرات</button>
+                    <button onclick="logout()" class="btn-danger">تسجيل الخروج 🚪</button>
                 </div>
-            </div>
-        </div>
+            </section>
 
+            <!-- 👥 الأصدقاء وطلبات الصداقة -->
+            <section id="tab-friends" class="tab-page hidden">
+                <h3>طلبات الصداقة</h3>
+                <div id="requests-list"></div>
+                <hr>
+                <h3>قائمة الأصدقاء</h3>
+                <div id="friends-list"></div>
+            </section>
+
+            <!-- 🌐 المستخدمين -->
+            <section id="tab-users" class="tab-page hidden">
+                <h3>جميع مستخدمي المنصة</h3>
+                <div id="users-grid" class="grid"></div>
+            </section>
+
+            <!-- 💬 الدردشات الخاصة على طراز ماسنجر -->
+            <section id="tab-chats" class="tab-page hidden">
+                <div id="chats-list-view">
+                    <h3>الرسائل والدردشات</h3>
+                    <div id="conversations-list" class="conversations-list"></div>
+                </div>
+
+                <div id="private-chat-window" class="chat-container hidden">
+                    <div class="chat-header-title">
+                        <button onclick="backToChatsList()" class="back-btn">⬅️</button>
+                        <span id="chat-with-name"></span>
+                        <button onclick="startCall()" class="call-btn">📞 اتصال</button>
+                    </div>
+                    <div id="private-messages" class="messages-area"></div>
+
+                    <!-- شريط الرد المباشر -->
+                    <div id="p-reply-box" class="reply-preview-box hidden">
+                        <span id="p-reply-text"></span>
+                        <button onclick="cancelReply('p')">✕</button>
+                    </div>
+                    
+                    <div class="chat-bar">
+                        <div id="p-rec-timer" class="rec-timer hidden">🔴 <span id="p-timer-count">00:00</span></div>
+                        <label class="icon-btn" title="إرفاق صورة أو فيديو">
+                            📷
+                            <input type="file" id="p-file-input" accept="image/*,video/*" onchange="sendPrivateMedia(this)" hidden>
+                        </label>
+                        <button class="icon-btn" id="p-mic-btn" onclick="toggleRecord('private')" title="تسجيل صوت">🎤</button>
+                        <input type="text" id="p-msg-input" placeholder="اكتب رسالة..." onkeypress="if(event.key==='Enter') sendPrivateMsg()">
+                        <button class="icon-btn like-btn" onclick="sendPrivateLike()" title="إرسال إعجاب">👍</button>
+                        <button class="send-btn" onclick="sendPrivateMsg()">إرسال</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 📢 الشات الجماعي العام -->
+            <section id="tab-global" class="tab-page hidden">
+                <div class="chat-container">
+                    <div class="chat-header-title">💬 الشات الجماعي العام</div>
+                    <div id="global-messages" class="messages-area"></div>
+                    
+                    <div id="g-reply-box" class="reply-preview-box hidden">
+                        <span id="g-reply-text"></span>
+                        <button onclick="cancelReply('g')">✕</button>
+                    </div>
+
+                    <div class="chat-bar">
+                        <div id="g-rec-timer" class="rec-timer hidden">🔴 <span id="g-timer-count">00:00</span></div>
+                        <label class="icon-btn" title="إرفاق صورة أو فيديو">
+                            📷
+                            <input type="file" id="g-file-input" accept="image/*,video/*" onchange="sendGlobalMedia(this)" hidden>
+                        </label>
+                        <button class="icon-btn" id="g-mic-btn" onclick="toggleRecord('global')" title="تسجيل صوت">🎤</button>
+                        <input type="text" id="g-msg-input" placeholder="اكتب رسالة..." onkeypress="if(event.key==='Enter') sendGlobalMsg()">
+                        <button class="icon-btn like-btn" onclick="sendGlobalLike()" title="إرسال إعجاب">👍</button>
+                        <button class="send-btn" onclick="sendGlobalMsg()">إرسال</button>
+                    </div>
+                </div>
+            </section>
+        </main>
     </div>
 
-    <!-- نافذة البروفايل المنبثقة -->
-    <div id="user-profile-modal" class="modal hidden">
-        <div class="modal-content">
-            <span class="close-btn" onclick="closeProfileModal()">&times;</span>
-            <img id="view-user-avatar" src="" alt="Avatar" class="profile-avatar">
+    <!-- نافذة التفاعلات والرد -->
+    <div id="reaction-modal" class="modal hidden" onclick="closeModal()">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="reactions-bar">
+                <span onclick="reactToMsg('❤️')">❤️</span>
+                <span onclick="reactToMsg('😂')">😂</span>
+                <span onclick="reactToMsg('👍')">👍</span>
+                <span onclick="reactToMsg('😮')">😮</span>
+                <span onclick="reactToMsg('😢')">😢</span>
+                <span onclick="reactToMsg('😡')">😡</span>
+            </div>
+            <button onclick="initiateReply()" class="reply-btn-modal">↩️ رد على الرسالة</button>
+        </div>
+    </div>
+
+    <!-- نافذة استعراض بروفايل المستخدم عند الضغط على صورته -->
+    <div id="user-profile-modal" class="modal hidden" onclick="closeProfileModal()">
+        <div class="modal-content profile-modal-card" onclick="event.stopPropagation()">
+            <img id="view-user-avatar" class="avatar-large" src="/kullanici.jpg">
             <h3 id="view-user-name"></h3>
             <p id="view-user-details"></p>
-            <button type="button" id="view-user-add-friend-btn">إرسال طلب صداقة</button>
-            <button type="button" id="view-user-chat-btn">مراسلة خاصة</button>
+            <button id="view-user-chat-btn" class="btn-alt">مراسلة</button>
+            <button onclick="closeProfileModal()" class="btn-secondary">إغلاق</button>
         </div>
     </div>
 
-    <!-- المكتبات للربط -->
-    <script src="/socket.io/socket.io.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
