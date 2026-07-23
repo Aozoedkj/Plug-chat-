@@ -8,16 +8,16 @@ const fs = require('fs');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-    maxHttpBufferSize: 1e8 // للسماح برفع الملفات والفوكال الكبيرة
+    maxHttpBufferSize: 1e8 // 100MB للفوكال والملفات
 });
 
-// إعداد مجلد uploads للحفظ
+// إعداد مجلد uploads
 const uploadDir = path.join(__dirname, 'public/uploads');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-// إعداد التخزين للملفات واللقطات والصوتيات
+// إعداد التخزين للملفات والفوكال
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, 'public/uploads/'),
     filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
@@ -27,14 +27,14 @@ const upload = multer({ storage });
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// 🧠 قواعد البيانات المؤقتة في الذاكرة (Memory DB)
-let users = [];           // [{ username, password, age, status, avatar, isOnline }]
-let globalMessages = [];  // [ { sender, avatar, text, media, isAudio, duration, replyTo } ]
-let privateMessages = {}; // { 'user1_user2': [ ...msgs ] }
-let friendRequests = {};  // { 'username': ['fromUser1', 'fromUser2'] }
-let friendsList = {};     // { 'username': ['friend1', 'friend2'] }
+// 🧠 الذاكرة المؤقتة (بيانات المستخدمين والرسائل)
+let users = [];           
+let globalMessages = [];  
+let privateMessages = {}; 
+let friendRequests = {};  
+let friendsList = {};     
 
-// 1️⃣ مسار تسجيل الدخول وإنشاء الحساب
+// 1️⃣ التسجيل والدخول
 app.post('/api/auth', (req, res) => {
     const { username, password, action, age, status } = req.body;
     let user = users.find(u => u.username === username);
@@ -63,7 +63,19 @@ app.post('/api/auth', (req, res) => {
     }
 });
 
-// 2️⃣ جلب جميع مستخدمي المنصة (لضمان ظهورهم دائماً)
+// 2️⃣ تحديث الملف الشخصي
+app.post('/api/update-profile', (req, res) => {
+    const { username, age, status, avatar } = req.body;
+    const user = users.find(u => u.username === username);
+    if (user) {
+        if (age) user.age = age;
+        if (status) user.status = status;
+        if (avatar) user.avatar = avatar;
+    }
+    res.json({ success: true });
+});
+
+// 3️⃣ جلب المستخدمين المعرفين
 app.get('/api/users', (req, res) => {
     res.json(users.map(u => ({
         username: u.username,
@@ -74,7 +86,7 @@ app.get('/api/users', (req, res) => {
     })));
 });
 
-// 3️⃣ جلب تفاصيل مستخدم معين
+// 4️⃣ معلومات مستخدم معين
 app.get('/api/user-info', (req, res) => {
     const u = users.find(x => x.username === req.query.username);
     if (u) {
@@ -84,19 +96,18 @@ app.get('/api/user-info', (req, res) => {
     }
 });
 
-// 4️⃣ حفظ وإرجاع سجل الشات الجماعي عند الريفرش
+// 5️⃣ سجلات الشات (تمنع مسح الرسائل عند الريفرش)
 app.get('/api/global-history', (req, res) => {
     res.json(globalMessages);
 });
 
-// 5️⃣ حفظ وإرجاع سجل المحادثات الخاصة عند الريفرش
 app.get('/api/private-history', (req, res) => {
     const { user1, user2 } = req.query;
     const chatKey = [user1, user2].sort().join('_');
     res.json(privateMessages[chatKey] || []);
 });
 
-// 6️⃣ قائمة المحادثات لتبويب الرسائل الخاصة (Messenger Style)
+// 6️⃣ قائمة المحادثات (أسلوب فيسبوك)
 app.get('/api/my-chats', (req, res) => {
     const username = req.query.username;
     const myFriends = friendsList[username] || [];
@@ -145,7 +156,6 @@ app.get('/api/friends-data', (req, res) => {
 app.post('/api/respond-friend-request', (req, res) => {
     const { username, targetUser, action } = req.body;
     
-    // إزالة الطلب
     if (friendRequests[username]) {
         friendRequests[username] = friendRequests[username].filter(u => u !== targetUser);
     }
@@ -161,14 +171,14 @@ app.post('/api/respond-friend-request', (req, res) => {
     res.json({ success: true });
 });
 
-// 8️⃣ رفع الصور والوسائط والصوتيات (الفوكال)
+// 8️⃣ رفع الملفات والصوتيات
 app.post('/api/upload', upload.single('file'), (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'لم يتم رفع ملف' });
     const fileUrl = `/uploads/${req.file.filename}`;
     res.json({ url: fileUrl });
 });
 
-// ⚡ Socket.io للمحادثات المباشرة والتزامن Real-time
+// ⚡ Socket.io للمحادثات المباشرة
 io.on('connection', (socket) => {
     let connectedUser = null;
 
@@ -179,20 +189,17 @@ io.on('connection', (socket) => {
         io.emit('update-user-status', { username, isOnline: true });
     });
 
-    // الشات الجماعي
     socket.on('send-global-msg', (msgData) => {
         globalMessages.push(msgData);
-        if (globalMessages.length > 200) globalMessages.shift(); // حفظ آخر 200 رسالة
+        if (globalMessages.length > 200) globalMessages.shift();
         io.emit('new-global-msg', msgData);
     });
 
-    // الشات الخاص
     socket.on('send-private-msg', ({ from, to, msgData }) => {
         const chatKey = [from, to].sort().join('_');
         if (!privateMessages[chatKey]) privateMessages[chatKey] = [];
         privateMessages[chatKey].push(msgData);
 
-        // إرسال للطرفين فورياً
         io.emit(`private-msg-${chatKey}`, msgData);
     });
 
