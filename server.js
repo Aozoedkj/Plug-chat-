@@ -1,266 +1,354 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const path = require('path');
-const multer = require('multer');
-const fs = require('fs');
+let socket = io();
+let currentUser = null;
+let currentChatPartner = null;
 
-const app = express();
-const server = http.createServer(app);
-const io = new Server(server, {
-    maxHttpBufferSize: 1e8
+// ==========================================
+// 1️⃣ الاستماع للتحديثات الحية (Socket Events)
+// ==========================================
+
+socket.on('reload-users-list', () => {
+    if (currentUser) loadUsersList();
 });
 
-// إعداد مجلد uploads
-const uploadDir = path.join(__dirname, 'public/uploads');
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
+socket.on('update-user-status', () => {
+    if (currentUser) loadUsersList();
+});
+
+function listenForFriendRequests() {
+    if (!currentUser) return;
+    socket.on(`new-friend-request-${currentUser.username}`, () => {
+        loadFriendsData();
+        alert('وصلك طلب صداقة جديد!');
+    });
 }
 
-// 📁 نظام التخزين الدائم بملف JSON
-const DATA_FILE = path.join(__dirname, 'db.json');
+// ==========================================
+// 2️⃣ تسجيل الدخول والتسجيل (مُصلحة بالكامل)
+// ==========================================
 
-function loadData() {
-    if (!fs.existsSync(DATA_FILE)) {
-        const initialData = { users: [], globalMessages: [], privateMessages: {}, friendRequests: {}, friendsList: {} };
-        fs.writeFileSync(DATA_FILE, JSON.stringify(initialData, null, 2));
-        return initialData;
+async function handleAuth(action) {
+    // محاولة جلب الحقول بأكثر من اسم شائع لتفادي أخطاء الـ HTML
+    const usernameEl = document.getElementById('auth-username') || document.getElementById('username');
+    const passwordEl = document.getElementById('auth-password') || document.getElementById('password');
+    const ageEl = document.getElementById('auth-age') || document.getElementById('age');
+    const statusEl = document.getElementById('auth-status') || document.getElementById('status');
+
+    const username = usernameEl ? usernameEl.value.trim() : '';
+    const password = passwordEl ? passwordEl.value.trim() : '';
+    const age = ageEl ? ageEl.value : 20;
+    const status = statusEl ? statusEl.value : 'أعزب';
+
+    if (!username || !password) {
+        alert('يرجى كتابة اسم المستخدم وكلمة السر');
+        return;
     }
+
     try {
-        const raw = fs.readFileSync(DATA_FILE);
-        return JSON.parse(raw);
+        const res = await fetch('/api/auth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password, action, age, status })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+            currentUser = data.user;
+            
+            // إخفاء شاشة التسجيل وإظهار الشاشة الرئيسية
+            const authScreen = document.getElementById('auth-screen') || document.getElementById('login-screen');
+            const appScreen = document.getElementById('app-screen') || document.getElementById('main-screen');
+
+            if (authScreen) authScreen.classList.add('hidden');
+            if (appScreen) appScreen.classList.remove('hidden');
+            
+            socket.emit('user-online', currentUser.username);
+            listenForFriendRequests();
+            
+            loadGlobalChat();
+            loadUsersList();
+            loadFriendsData();
+        } else {
+            alert(data.msg);
+        }
+    } catch (err) {
+        console.error('خطأ في الاتصال:', err);
+        alert('حدث خطأ أثناء الاتصال بالسيرفر، تأكد من تشغيل السيرفر بشكل صحيح.');
+    }
+}
+
+// ==========================================
+// 3️⃣ التنقل بين التبويبات (Tabs)
+// ==========================================
+
+function switchTab(tabName) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+
+    const activeTab = document.getElementById(`tab-${tabName}`);
+    if (activeTab) activeTab.classList.remove('hidden');
+    
+    if (tabName === 'users') loadUsersList();
+    if (tabName === 'chats') loadMyChats();
+    if (tabName === 'friends') loadFriendsData();
+}
+
+// ==========================================
+// 4️⃣ عرض قائمة جميع المستخدمين
+// ==========================================
+
+async function loadUsersList() {
+    try {
+        const res = await fetch('/api/users');
+        const users = await res.json();
+        
+        const container = document.getElementById('users-list-container') || document.getElementById('users-list');
+        if (!container) return;
+        container.innerHTML = '';
+
+        const fallbackAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ccc'><path d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/></svg>";
+
+        users.forEach(u => {
+            if (currentUser && u.username === currentUser.username) return;
+
+            const card = document.createElement('div');
+            card.className = 'user-card';
+            card.onclick = () => viewUserProfile(u.username);
+
+            const statusDotClass = u.isOnline ? 'status-online' : 'status-offline';
+            const statusText = u.isOnline ? 'متصل الآن' : 'غير متصل';
+
+            card.innerHTML = `
+                <div class="avatar-wrapper">
+                    <img src="${u.avatar || fallbackAvatar}" class="user-avatar" onerror="this.src='${fallbackAvatar}'">
+                    <span class="status-indicator ${statusDotClass}"></span>
+                </div>
+                <div class="user-info">
+                    <h4>${u.username}</h4>
+                    <p class="status-subtext">${statusText}</p>
+                </div>
+            `;
+            container.appendChild(card);
+        });
     } catch (e) {
-        return { users: [], globalMessages: [], privateMessages: {}, friendRequests: {}, friendsList: {} };
+        console.error('خطأ في جلب المستخدمين:', e);
     }
 }
 
-function saveData() {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
+// ==========================================
+// 5️⃣ عرض بروفايل المستخدم وإرسال طلب الصداقة
+// ==========================================
+
+async function viewUserProfile(username) {
+    const res = await fetch(`/api/user-info?username=${username}`);
+    const u = await res.json();
+    
+    const fallbackAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ccc'><path d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/></svg>";
+
+    const avatarEl = document.getElementById('view-user-avatar');
+    const nameEl = document.getElementById('view-user-name');
+    const detailsEl = document.getElementById('view-user-details');
+
+    if (avatarEl) avatarEl.src = u.avatar || fallbackAvatar;
+    if (nameEl) nameEl.innerText = u.username;
+    if (detailsEl) detailsEl.innerText = `العمر: ${u.age || 20} | الحالة: ${u.status || 'أعزب'}`;
+    
+    const chatBtn = document.getElementById('view-user-chat-btn');
+    if (chatBtn) {
+        chatBtn.onclick = () => {
+            closeProfileModal();
+            switchTab('chats');
+            openPrivateChat(u.username);
+        };
+    }
+
+    const friendBtn = document.getElementById('view-user-add-friend-btn');
+    if (friendBtn) {
+        friendBtn.onclick = () => sendFriendRequest(u.username);
+    }
+
+    const modal = document.getElementById('user-profile-modal');
+    if (modal) modal.classList.remove('hidden');
 }
 
-let db = loadData();
+function closeProfileModal() {
+    const modal = document.getElementById('user-profile-modal');
+    if (modal) modal.classList.add('hidden');
+}
 
-// عند إعادة تشغيل السيرفر نضبط كل المستخدمين كـ "غير متصلين" حتى يدخلوا مجدداً
-db.users.forEach(u => u.isOnline = false);
+async function sendFriendRequest(targetUser) {
+    const res = await fetch('/api/friend-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: currentUser.username, to: targetUser })
+    });
+    const data = await res.json();
+    alert(data.msg);
+}
 
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, 'public/uploads/'),
-    filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
-});
-const upload = multer({ storage });
+// ==========================================
+// 6️⃣ إدراة الأصدقاء والطلبات المعلقة
+// ==========================================
 
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+async function loadFriendsData() {
+    if (!currentUser) return;
+    const res = await fetch(`/api/friends-data?username=${currentUser.username}`);
+    const data = await res.json();
 
-// 1️⃣ التسجيل والدخول
-app.post('/api/auth', (req, res) => {
-    const { username, password, action, age, status } = req.body;
-    let user = db.users.find(u => u.username === username);
-
-    if (action === 'register') {
-        if (user) return res.json({ success: false, msg: 'اسم المستخدم مأخوذ بالفعل!' });
-        
-        user = { 
-            username, 
-            password, 
-            age: age || 20, 
-            status: status || 'أعزب', 
-            avatar: '', 
-            isOnline: true 
-        };
-        
-        db.users.push(user);
-        if (!db.friendRequests[username]) db.friendRequests[username] = [];
-        if (!db.friendsList[username]) db.friendsList[username] = [];
-        
-        saveData();
-        io.emit('reload-users-list');
-        return res.json({ success: true, user });
-    }
-
-    if (action === 'login') {
-        if (!user || user.password !== password) {
-            return res.json({ success: false, msg: 'اسم المستخدم أو كلمة السر خاطئة!' });
+    const reqContainer = document.getElementById('friend-requests-container');
+    if (reqContainer) {
+        reqContainer.innerHTML = '';
+        if (data.requests.length === 0) {
+            reqContainer.innerHTML = '<p class="empty-msg">لا توجد طلبات صداقة جديدة</p>';
+        } else {
+            data.requests.forEach(reqUser => {
+                const item = document.createElement('div');
+                item.className = 'request-item';
+                item.innerHTML = `
+                    <span><b>${reqUser}</b> أرسل لك طلب صداقة</span>
+                    <div class="actions">
+                        <button onclick="respondRequest('${reqUser}', 'accept')" class="btn-accept">قبول</button>
+                        <button onclick="respondRequest('${reqUser}', 'reject')" class="btn-reject">رفض</button>
+                    </div>
+                `;
+                reqContainer.appendChild(item);
+            });
         }
-        user.isOnline = true;
-        saveData();
-        io.emit('reload-users-list');
-        return res.json({ success: true, user });
     }
-});
 
-// 2️⃣ تحديث البروفايل
-app.post('/api/update-profile', (req, res) => {
-    const { username, age, status, avatar } = req.body;
-    const user = db.users.find(u => u.username === username);
-    if (user) {
-        if (age) user.age = age;
-        if (status) user.status = status;
-        if (avatar) user.avatar = avatar;
-        saveData();
-        io.emit('reload-users-list');
-    }
-    res.json({ success: true });
-});
-
-// 3️⃣ جلب المستخدمين
-app.get('/api/users', (req, res) => {
-    res.json(db.users.map(u => ({
-        username: u.username,
-        age: u.age,
-        status: u.status,
-        avatar: u.avatar || '',
-        isOnline: !!u.isOnline
-    })));
-});
-
-// 4️⃣ بيانات مستخدم محدد
-app.get('/api/user-info', (req, res) => {
-    const u = db.users.find(x => x.username === req.query.username);
-    if (u) {
-        res.json({ username: u.username, age: u.age, status: u.status, avatar: u.avatar || '' });
-    } else {
-        res.json({ username: req.query.username, avatar: '' });
-    }
-});
-
-// 5️⃣ السجلات
-app.get('/api/global-history', (req, res) => {
-    res.json(db.globalMessages);
-});
-
-app.get('/api/private-history', (req, res) => {
-    const { user1, user2 } = req.query;
-    const chatKey = [user1, user2].sort().join('_');
-    res.json(db.privateMessages[chatKey] || []);
-});
-
-// 6️⃣ المحادثات والدردشة
-app.get('/api/my-chats', (req, res) => {
-    const username = req.query.username;
-    const myFriends = db.friendsList[username] || [];
-    
-    const chats = myFriends.map(fName => {
-        const friendUser = db.users.find(u => u.username === fName) || {};
-        const chatKey = [username, fName].sort().join('_');
-        const msgs = db.privateMessages[chatKey] || [];
-        const lastMsgObj = msgs[msgs.length - 1];
-        
-        let lastMsg = 'لا توجد رسائل بعد';
-        if (lastMsgObj) {
-            if (lastMsgObj.text) lastMsg = lastMsgObj.text;
-            else if (lastMsgObj.isAudio) lastMsg = '🎙️ رسالة صوتية';
-            else if (lastMsgObj.media) lastMsg = '📷 صورة/فيديو';
+    const friendsContainer = document.getElementById('my-friends-container');
+    if (friendsContainer) {
+        friendsContainer.innerHTML = '';
+        if (data.friends.length === 0) {
+            friendsContainer.innerHTML = '<p class="empty-msg">ليس لديك أصدقاء بعد</p>';
+        } else {
+            data.friends.forEach(fUser => {
+                const item = document.createElement('div');
+                item.className = 'friend-item';
+                item.innerHTML = `
+                    <span>${fUser}</span>
+                    <button onclick="switchTab('chats'); openPrivateChat('${fUser}')" class="btn-chat">مراسلة</button>
+                `;
+                friendsContainer.appendChild(item);
+            });
         }
-
-        return {
-            username: fName,
-            avatar: friendUser.avatar || '',
-            lastMsg
-        };
-    });
-
-    res.json(chats);
-});
-
-// 7️⃣ طلبات الصداقة
-app.post('/api/friend-request', (req, res) => {
-    const { from, to } = req.body;
-    
-    if (!db.friendRequests[to]) db.friendRequests[to] = [];
-    if (!db.friendsList[from]) db.friendsList[from] = [];
-    
-    if (db.friendsList[from].includes(to)) {
-        return res.json({ success: false, msg: 'أنتم أصدقاء بالفعل!' });
     }
+}
+
+async function respondRequest(targetUser, action) {
+    await fetch('/api/respond-friend-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: currentUser.username, targetUser, action })
+    });
+    loadFriendsData();
+}
+
+// ==========================================
+// 7️⃣ الشات العام والمحادثات الخاصة
+// ==========================================
+
+async function loadGlobalChat() {
+    const container = document.getElementById('global-messages');
+    if (!container) return;
+    container.innerHTML = '';
+    const res = await fetch('/api/global-history');
+    const msgs = await res.json();
+    msgs.forEach(m => renderMessage(container, m));
+
+    socket.off('new-global-msg');
+    socket.on('new-global-msg', (msg) => {
+        renderMessage(container, msg);
+    });
+}
+
+function sendGlobalMessage() {
+    const input = document.getElementById('global-input');
+    if (!input) return;
+    const text = input.value.trim();
+    if (!text) return;
+
+    socket.emit('send-global-msg', {
+        sender: currentUser.username,
+        text,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    });
+    input.value = '';
+}
+
+async function loadMyChats() {
+    const res = await fetch(`/api/my-chats?username=${currentUser.username}`);
+    const chats = await res.json();
+    const container = document.getElementById('chats-list-container');
+    if (!container) return;
     
-    if (db.friendRequests[to].includes(from)) {
-        return res.json({ success: false, msg: 'لقد أرسلت طلب صداقة سابقاً، وهو بانتظار الموافقة.' });
-    }
-
-    db.friendRequests[to].push(from);
-    saveData();
-
-    io.emit(`new-friend-request-${to}`);
-
-    res.json({ success: true, msg: 'تم إرسال طلب الصداقة بنجاح!' });
-});
-
-app.get('/api/friends-data', (req, res) => {
-    const username = req.query.username;
-    res.json({
-        requests: db.friendRequests[username] || [],
-        friends: db.friendsList[username] || []
+    container.innerHTML = '';
+    chats.forEach(c => {
+        const div = document.createElement('div');
+        div.className = 'chat-item';
+        div.onclick = () => openPrivateChat(c.username);
+        div.innerHTML = `
+            <h4>${c.username}</h4>
+            <p>${c.lastMsg}</p>
+        `;
+        container.appendChild(div);
     });
-});
+}
 
-app.post('/api/respond-friend-request', (req, res) => {
-    const { username, targetUser, action } = req.body;
+async function openPrivateChat(targetUsername) {
+    currentChatPartner = targetUsername;
     
-    if (db.friendRequests[username]) {
-        db.friendRequests[username] = db.friendRequests[username].filter(u => u !== targetUser);
-    }
+    document.getElementById('chats-list-view')?.classList.add('hidden');
+    document.getElementById('private-chat-window')?.classList.remove('hidden');
+    
+    const titleEl = document.getElementById('chat-with-name');
+    if (titleEl) titleEl.innerText = targetUsername;
+    
+    const msgContainer = document.getElementById('private-messages');
+    if (!msgContainer) return;
+    msgContainer.innerHTML = '';
 
-    if (action === 'accept') {
-        if (!db.friendsList[username]) db.friendsList[username] = [];
-        if (!db.friendsList[targetUser]) db.friendsList[targetUser] = [];
-        
-        if (!db.friendsList[username].includes(targetUser)) db.friendsList[username].push(targetUser);
-        if (!db.friendsList[targetUser].includes(username)) db.friendsList[targetUser].push(username);
-    }
+    const res = await fetch(`/api/private-history?user1=${currentUser.username}&user2=${targetUsername}`);
+    const history = await res.json();
+    history.forEach(m => renderMessage(msgContainer, m));
 
-    saveData();
-    res.json({ success: true });
-});
+    const chatKey = [currentUser.username, targetUsername].sort().join('_');
+    socket.off(`private-msg-${chatKey}`);
+    socket.on(`private-msg-${chatKey}`, (msg) => {
+        renderMessage(msgContainer, msg);
+    });
+}
 
-// 8️⃣ رفع الملفات
-app.post('/api/upload', upload.single('file'), (req, res) => {
-    if (!req.file) return res.status(400).json({ error: 'لم يتم رفع ملف' });
-    const fileUrl = `/uploads/${req.file.filename}`;
-    res.json({ url: fileUrl });
-});
+function sendPrivateMessage() {
+    const input = document.getElementById('private-input');
+    if (!input) return;
+    const text = input.value.trim();
+    if (!text || !currentChatPartner) return;
 
-// Socket.io
-io.on('connection', (socket) => {
-    let connectedUser = null;
+    const msgData = {
+        sender: currentUser.username,
+        text,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
 
-    socket.on('user-online', (username) => {
-        connectedUser = username;
-        const u = db.users.find(x => x.username === username);
-        if (u) {
-            u.isOnline = true;
-            saveData();
-        }
-        io.emit('update-user-status', { username, isOnline: true });
+    socket.emit('send-private-msg', {
+        from: currentUser.username,
+        to: currentChatPartner,
+        msgData
     });
 
-    socket.on('send-global-msg', (msgData) => {
-        db.globalMessages.push(msgData);
-        if (db.globalMessages.length > 300) db.globalMessages.shift();
-        saveData();
-        io.emit('new-global-msg', msgData);
-    });
+    input.value = '';
+}
 
-    socket.on('send-private-msg', ({ from, to, msgData }) => {
-        const chatKey = [from, to].sort().join('_');
-        if (!db.privateMessages[chatKey]) db.privateMessages[chatKey] = [];
-        db.privateMessages[chatKey].push(msgData);
-        saveData();
-
-        io.emit(`private-msg-${chatKey}`, msgData);
-    });
-
-    socket.on('disconnect', () => {
-        if (connectedUser) {
-            const u = db.users.find(x => x.username === connectedUser);
-            if (u) {
-                u.isOnline = false;
-                saveData();
-            }
-            io.emit('update-user-status', { username: connectedUser, isOnline: false });
-        }
-    });
-});
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+function renderMessage(container, msg) {
+    if (!container) return;
+    const isMe = currentUser && msg.sender === currentUser.username;
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `message ${isMe ? 'my-message' : 'other-message'}`;
+    msgDiv.innerHTML = `
+        <span class="sender-name">${msg.sender}</span>
+        <p class="msg-text">${msg.text}</p>
+        <span class="msg-time">${msg.time}</span>
+    `;
+    container.appendChild(msgDiv);
+    container.scrollTop = container.scrollHeight;
+}
