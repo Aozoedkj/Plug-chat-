@@ -7,7 +7,7 @@ let activeReplyText = null;
 
 const DEFAULT_AVATAR = '/kullanici.jpg';
 
-// 🔄 الحفاظ على الجلسة عند عمل Refresh
+// 🔄 الحفاظ على الجلسة عند Refresh
 window.addEventListener('DOMContentLoaded', () => {
     const savedUser = localStorage.getItem('plug_chat_user');
     if (savedUser) {
@@ -80,7 +80,42 @@ function setupProfileUI() {
     document.getElementById('my-avatar').src = currentUser.avatar || DEFAULT_AVATAR;
 }
 
-// 🌐 جلب مستخدمي المنصة من السيرفر لضمان ظهور الجميع دائماً
+// 📸 تغيير وصيانة الملف الشخصي
+async function uploadAvatar() {
+    const input = document.getElementById('avatar-input');
+    if (input.files && input.files[0]) {
+        const formData = new FormData();
+        formData.append('file', input.files[0]);
+        
+        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+        
+        if (data.url) {
+            currentUser.avatar = data.url;
+            document.getElementById('my-avatar').src = data.url;
+            saveProfile();
+        }
+    }
+}
+
+async function saveProfile() {
+    const age = document.getElementById('my-age').value;
+    const status = document.getElementById('my-status').value;
+    
+    currentUser.age = age;
+    currentUser.status = status;
+    localStorage.setItem('plug_chat_user', JSON.stringify(currentUser));
+    
+    await fetch('/api/update-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: currentUser.username, age, status, avatar: currentUser.avatar })
+    });
+    
+    alert('تم حفظ البيانات بنجاح!');
+}
+
+// 🌐 جلب مستخدمي المنصة
 async function loadUsersList() {
     const res = await fetch('/api/users');
     const users = await res.json();
@@ -105,7 +140,7 @@ async function loadUsersList() {
     });
 }
 
-// 👥 طلبات وقائمة الأصدقاء
+// 👥 طلبات الأصدقاء
 async function sendFriendRequest(targetUser) {
     const res = await fetch('/api/friend-request', {
         method: 'POST',
@@ -152,7 +187,7 @@ async function respondFriendReq(fromUser, action) {
     loadFriendsData();
 }
 
-// 💬 قائمة الدردشات العامة والخاصة بأسلوب الفيسبوك
+// 💬 قائمة محادثات أسلوب Messenger
 async function loadConversationsList() {
     document.getElementById('chats-list-view').classList.remove('hidden');
     document.getElementById('private-chat-window').classList.add('hidden');
@@ -190,7 +225,6 @@ async function openPrivateChat(targetUsername) {
     const msgContainer = document.getElementById('private-messages');
     msgContainer.innerHTML = '';
 
-    // جلب سجل المحادثات المحفوظة
     const res = await fetch(`/api/private-history?user1=${currentUser.username}&user2=${targetUsername}`);
     const history = await res.json();
     history.forEach(m => renderMessage(msgContainer, m));
@@ -215,7 +249,7 @@ socket.on('new-global-msg', (msg) => {
     renderMessage(msgContainer, msg);
 });
 
-// ✉️ إرسال الرسائل العامة والخاصة
+// ✉️ الإرسال واللايك والوسائط
 async function sendGlobalMsg() {
     const input = document.getElementById('g-msg-input');
     if (input.value.trim()) {
@@ -236,7 +270,37 @@ async function sendPrivateMsg() {
     }
 }
 
-// 🎙️ تسجيل الفوكال
+function sendGlobalLike() {
+    socket.emit('send-global-msg', { sender: currentUser.username, avatar: currentUser.avatar, text: '👍' });
+}
+
+function sendPrivateLike() {
+    const msgData = { sender: currentUser.username, avatar: currentUser.avatar, text: '👍' };
+    socket.emit('send-private-msg', { from: currentUser.username, to: currentChatPartner, msgData });
+}
+
+async function sendGlobalMedia(input) {
+    if (input.files && input.files[0]) {
+        const formData = new FormData();
+        formData.append('file', input.files[0]);
+        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+        socket.emit('send-global-msg', { sender: currentUser.username, avatar: currentUser.avatar, media: data.url });
+    }
+}
+
+async function sendPrivateMedia(input) {
+    if (input.files && input.files[0]) {
+        const formData = new FormData();
+        formData.append('file', input.files[0]);
+        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+        const msgData = { sender: currentUser.username, avatar: currentUser.avatar, media: data.url };
+        socket.emit('send-private-msg', { from: currentUser.username, to: currentChatPartner, msgData });
+    }
+}
+
+// 🎙️ تسجيل وتوجيه الصوت الفوكال
 let mediaRecorder, audioChunks = [], isRecording = false, recTimerInterval, secondsRecorded = 0;
 
 async function toggleRecord(type) {
@@ -284,7 +348,7 @@ async function toggleRecord(type) {
             isRecording = true;
             btn.classList.add('recording');
         } catch (err) {
-            alert('يرجى منح صلاحية المايكروفون');
+            alert('يرجى سماح استخدام المايكروفون');
         }
     } else {
         mediaRecorder.stop();
@@ -293,7 +357,7 @@ async function toggleRecord(type) {
     }
 }
 
-// 🎨 عرض الرسائل بالكامل وطريقة عرض الفوكال مثل فيسبوك
+// 🎨 عرض الرسائل بالكامل
 function renderMessage(container, msg) {
     const wrapper = document.createElement('div');
     const isMe = msg.sender === currentUser.username;
@@ -350,7 +414,7 @@ function resetFbAudioBtn(audio) {
     audio.parentElement.querySelector('.play-pause-btn').innerText = '▶';
 }
 
-// 👤 استعراض البروفايل عند النقر على صورة أو اسم الشخص
+// 👤 استعراض البروفايل عند النقر
 async function viewUserProfile(username) {
     const res = await fetch(`/api/user-info?username=${username}`);
     const u = await res.json();
