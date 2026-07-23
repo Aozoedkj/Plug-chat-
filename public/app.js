@@ -27,36 +27,47 @@ function listenForFriendRequests() {
 // ==========================================
 
 async function handleAuth(action) {
-    const username = document.getElementById('auth-username').value.trim();
-    const password = document.getElementById('auth-password').value.trim();
-    const age = document.getElementById('auth-age') ? document.getElementById('auth-age').value : 20;
-    const status = document.getElementById('auth-status') ? document.getElementById('auth-status').value : 'أعزب';
+    const usernameEl = document.getElementById('auth-username');
+    const passwordEl = document.getElementById('auth-password');
+    const ageEl = document.getElementById('auth-age');
+    const statusEl = document.getElementById('auth-status');
+
+    const username = usernameEl ? usernameEl.value.trim() : '';
+    const password = passwordEl ? passwordEl.value.trim() : '';
+    const age = ageEl ? ageEl.value : 20;
+    const status = statusEl ? statusEl.value : 'أعزب';
 
     if (!username || !password) {
         alert('يرجى كتابة اسم المستخدم وكلمة السر');
         return;
     }
 
-    const res = await fetch('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password, action, age, status })
-    });
+    try {
+        const res = await fetch('/api/auth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password, action, age, status })
+        });
 
-    const data = await res.json();
-    if (data.success) {
-        currentUser = data.user;
-        document.getElementById('auth-screen').classList.add('hidden');
-        document.getElementById('app-screen').classList.remove('hidden');
-        
-        socket.emit('user-online', currentUser.username);
-        listenForFriendRequests();
-        
-        loadGlobalChat();
-        loadUsersList();
-        loadFriendsData();
-    } else {
-        alert(data.msg);
+        const data = await res.json();
+        if (data.success) {
+            currentUser = data.user;
+            
+            document.getElementById('auth-screen').classList.add('hidden');
+            document.getElementById('app-screen').classList.remove('hidden');
+            
+            socket.emit('user-online', currentUser.username);
+            listenForFriendRequests();
+            
+            loadGlobalChat();
+            loadUsersList();
+            loadFriendsData();
+        } else {
+            alert(data.msg);
+        }
+    } catch (err) {
+        console.error('خطأ في الاتصال:', err);
+        alert('حدث خطأ أثناء الاتصال بالسيرفر، تأكد من تشغيل السيرفر بشكل صحيح.');
     }
 }
 
@@ -68,7 +79,8 @@ function switchTab(tabName) {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
     document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
 
-    document.getElementById(`tab-${tabName}`).classList.remove('hidden');
+    const activeTab = document.getElementById(`tab-${tabName}`);
+    if (activeTab) activeTab.classList.remove('hidden');
     
     if (tabName === 'users') loadUsersList();
     if (tabName === 'chats') loadMyChats();
@@ -80,37 +92,41 @@ function switchTab(tabName) {
 // ==========================================
 
 async function loadUsersList() {
-    const res = await fetch('/api/users');
-    const users = await res.json();
-    
-    const container = document.getElementById('users-list-container');
-    if (!container) return;
-    container.innerHTML = '';
+    try {
+        const res = await fetch('/api/users');
+        const users = await res.json();
+        
+        const container = document.getElementById('users-list-container');
+        if (!container) return;
+        container.innerHTML = '';
 
-    const fallbackAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ccc'><path d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/></svg>";
+        const fallbackAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ccc'><path d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/></svg>";
 
-    users.forEach(u => {
-        if (currentUser && u.username === currentUser.username) return;
+        users.forEach(u => {
+            if (currentUser && u.username === currentUser.username) return;
 
-        const card = document.createElement('div');
-        card.className = 'user-card';
-        card.onclick = () => viewUserProfile(u.username);
+            const card = document.createElement('div');
+            card.className = 'user-card';
+            card.onclick = () => viewUserProfile(u.username);
 
-        const statusDotClass = u.isOnline ? 'status-online' : 'status-offline';
-        const statusText = u.isOnline ? 'متصل الآن' : 'غير متصل';
+            const statusDotClass = u.isOnline ? 'status-online' : 'status-offline';
+            const statusText = u.isOnline ? 'متصل الآن' : 'غير متصل';
 
-        card.innerHTML = `
-            <div class="avatar-wrapper">
-                <img src="${u.avatar || fallbackAvatar}" class="user-avatar" onerror="this.src='${fallbackAvatar}'">
-                <span class="status-indicator ${statusDotClass}"></span>
-            </div>
-            <div class="user-info">
-                <h4>${u.username}</h4>
-                <p class="status-subtext">${statusText}</p>
-            </div>
-        `;
-        container.appendChild(card);
-    });
+            card.innerHTML = `
+                <div class="avatar-wrapper">
+                    <img src="${u.avatar || fallbackAvatar}" class="user-avatar" onerror="this.src='${fallbackAvatar}'">
+                    <span class="status-indicator ${statusDotClass}"></span>
+                </div>
+                <div class="user-info">
+                    <h4>${u.username}</h4>
+                    <p class="status-subtext">${statusText}</p>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+    } catch (e) {
+        console.error('خطأ في جلب المستخدمين:', e);
+    }
 }
 
 // ==========================================
@@ -127,15 +143,15 @@ async function viewUserProfile(username) {
     document.getElementById('view-user-name').innerText = u.username;
     document.getElementById('view-user-details').innerText = `العمر: ${u.age || 20} | الحالة: ${u.status || 'أعزب'}`;
     
-    // زر المراسلة
     const chatBtn = document.getElementById('view-user-chat-btn');
-    chatBtn.onclick = () => {
-        closeProfileModal();
-        switchTab('chats');
-        openPrivateChat(u.username);
-    };
+    if (chatBtn) {
+        chatBtn.onclick = () => {
+            closeProfileModal();
+            switchTab('chats');
+            openPrivateChat(u.username);
+        };
+    }
 
-    // زر إرسال طلب الصداقة
     const friendBtn = document.getElementById('view-user-add-friend-btn');
     if (friendBtn) {
         friendBtn.onclick = () => sendFriendRequest(u.username);
@@ -167,7 +183,6 @@ async function loadFriendsData() {
     const res = await fetch(`/api/friends-data?username=${currentUser.username}`);
     const data = await res.json();
 
-    // 1. عرض الطلبات المعلقة
     const reqContainer = document.getElementById('friend-requests-container');
     if (reqContainer) {
         reqContainer.innerHTML = '';
@@ -189,7 +204,6 @@ async function loadFriendsData() {
         }
     }
 
-    // 2. عرض قائمة الأصدقاء
     const friendsContainer = document.getElementById('my-friends-container');
     if (friendsContainer) {
         friendsContainer.innerHTML = '';
@@ -224,6 +238,7 @@ async function respondRequest(targetUser, action) {
 
 async function loadGlobalChat() {
     const container = document.getElementById('global-messages');
+    if (!container) return;
     container.innerHTML = '';
     const res = await fetch('/api/global-history');
     const msgs = await res.json();
@@ -237,6 +252,7 @@ async function loadGlobalChat() {
 
 function sendGlobalMessage() {
     const input = document.getElementById('global-input');
+    if (!input) return;
     const text = input.value.trim();
     if (!text) return;
 
@@ -277,6 +293,7 @@ async function openPrivateChat(targetUsername) {
     if (titleEl) titleEl.innerText = targetUsername;
     
     const msgContainer = document.getElementById('private-messages');
+    if (!msgContainer) return;
     msgContainer.innerHTML = '';
 
     const res = await fetch(`/api/private-history?user1=${currentUser.username}&user2=${targetUsername}`);
@@ -292,6 +309,7 @@ async function openPrivateChat(targetUsername) {
 
 function sendPrivateMessage() {
     const input = document.getElementById('private-input');
+    if (!input) return;
     const text = input.value.trim();
     if (!text || !currentChatPartner) return;
 
