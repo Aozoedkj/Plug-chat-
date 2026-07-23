@@ -9,14 +9,13 @@
 </head>
 <body>
 
-    <!-- 🔒 شاشة المصادقة (تسجيل الدخول / إنشاء حساب) -->
+    <!-- 🔒 شاشة المصادقة -->
     <div id="auth-screen" class="card">
         <h2>⚡ Plug Chat ⚡</h2>
         
         <input type="text" id="auth-username" placeholder="اسم المستخدم">
         <input type="password" id="auth-password" placeholder="كلمة السر">
 
-        <!-- حقول إضافية لإنشاء الحساب الجديد فقط -->
         <div id="register-fields" class="hidden">
             <input type="number" id="auth-age" placeholder="العمر" value="20">
             <select id="auth-status">
@@ -34,7 +33,7 @@
         <button id="toggle-auth-btn" class="btn-secondary" onclick="toggleAuthMode()">إنشاء حساب جديد</button>
     </div>
 
-    <!-- 🌐 واجهة التطبيق والشريط العلوي (تظهر بعد الدخول فقط) -->
+    <!-- 🌐 واجهة التطبيق -->
     <div id="app-screen" class="hidden">
         
         <nav class="top-nav">
@@ -52,8 +51,8 @@
             <!-- 👤 الملف الشخصي -->
             <section id="tab-profile" class="tab-page">
                 <h3>الملف الشخصي</h3>
-                <div class="profile-box">
-                    <img id="my-avatar" src="" width="100" height="100">
+                <div class="profile-box card">
+                    <img id="my-avatar" src="/aziz/profil.png" width="100" height="100" class="avatar-large">
                     <input type="file" id="avatar-input" onchange="uploadAvatar()">
                     <p>الاسم: <b id="my-username"></b></p>
                     <label>العمر: <input type="number" id="my-age"></label>
@@ -64,7 +63,8 @@
                             <option value="مخطوب">مخطوب</option>
                         </select>
                     </label>
-                    <button onclick="saveProfile()">حفظ التغيرات</button>
+                    <button onclick="saveProfile()" class="btn-alt">حفظ التغيرات</button>
+                    <button onclick="logout()" class="btn-danger">تسجيل الخروج 🚪</button>
                 </div>
             </section>
 
@@ -94,6 +94,7 @@
                     <div id="private-messages" class="messages-area"></div>
                     
                     <div class="chat-bar">
+                        <div id="p-rec-timer" class="rec-timer hidden">🔴 <span id="p-timer-count">00:00</span></div>
                         <label class="icon-btn" title="إرفاق صورة أو فيديو">
                             📷
                             <input type="file" id="p-file-input" accept="image/*,video/*" onchange="sendPrivateMedia(this)" hidden>
@@ -113,6 +114,7 @@
                     <div id="global-messages" class="messages-area"></div>
                     
                     <div class="chat-bar">
+                        <div id="g-rec-timer" class="rec-timer hidden">🔴 <span id="g-timer-count">00:00</span></div>
                         <label class="icon-btn" title="إرفاق صورة أو فيديو">
                             📷
                             <input type="file" id="g-file-input" accept="image/*,video/*" onchange="sendGlobalMedia(this)" hidden>
@@ -125,6 +127,20 @@
                 </div>
             </section>
         </main>
+    </div>
+
+    <!-- نافذة التفاعلات والرد الخاطفة -->
+    <div id="reaction-modal" class="modal hidden" onclick="closeModal()">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="reactions-bar">
+                <span onclick="reactToMsg('❤️')">❤️</span>
+                <span onclick="reactToMsg('😂')">😂</span>
+                <span onclick="reactToMsg('👍')">👍</span>
+                <span onclick="reactToMsg('😮')">😮</span>
+                <span onclick="reactToMsg('😢')">😢</span>
+                <span onclick="reactToMsg('😡')">😡</span>
+            </div>
+        </div>
     </div>
 
     <script src="app.js"></script>
