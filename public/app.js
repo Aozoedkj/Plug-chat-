@@ -2,39 +2,36 @@ const socket = io();
 let currentUser = null;
 let currentChatPartner = null;
 let isRegisterMode = false;
+let selectedMsgElement = null;
 
-// التكيف التلقائي لشريط الإدخال مع لوحة المفاتيح
-if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', () => {
-        const chatBars = document.querySelectorAll('.chat-bar');
-        chatBars.forEach(bar => {
-            bar.style.bottom = `${window.innerHeight - window.visualViewport.height}px`;
-        });
-    });
+// المسار الافتراضي للصورة المحددة
+const DEFAULT_AVATAR = '/aziz/profil.png';
+
+// 🔄 استعادة الجلسة وتجنب الخروج عند الـ Refresh
+window.addEventListener('DOMContentLoaded', () => {
+    const savedUser = localStorage.getItem('plug_chat_user');
+    if (savedUser) {
+        currentUser = JSON.parse(savedUser);
+        document.getElementById('auth-screen').classList.add('hidden');
+        document.getElementById('app-screen').classList.remove('hidden');
+        socket.emit('user-online', currentUser.username);
+        setupProfileUI();
+    }
+});
+
+function logout() {
+    localStorage.removeItem('plug_chat_user');
+    location.reload();
 }
 
-// التبديل بين وضع الدخول ووضع إنشاء الحساب
 function toggleAuthMode() {
     isRegisterMode = !isRegisterMode;
-    const registerFields = document.getElementById('register-fields');
-    const loginBtn = document.getElementById('login-btn');
-    const registerSubmitBtn = document.getElementById('register-submit-btn');
-    const toggleBtn = document.getElementById('toggle-auth-btn');
-
-    if (isRegisterMode) {
-        registerFields.classList.remove('hidden');
-        registerSubmitBtn.classList.remove('hidden');
-        loginBtn.classList.add('hidden');
-        toggleBtn.innerText = 'لديك حساب بالفعل؟ تسجيل الدخول';
-    } else {
-        registerFields.classList.add('hidden');
-        registerSubmitBtn.classList.add('hidden');
-        loginBtn.classList.remove('hidden');
-        toggleBtn.innerText = 'إنشاء حساب جديد';
-    }
+    document.getElementById('register-fields').classList.toggle('hidden');
+    document.getElementById('register-submit-btn').classList.toggle('hidden');
+    document.getElementById('login-btn').classList.toggle('hidden');
+    document.getElementById('toggle-auth-btn').innerText = isRegisterMode ? 'لديك حساب بالفعل؟ تسجيل الدخول' : 'إنشاء حساب جديد';
 }
 
-// معالجة تسجيل الدخول / إنشاء الحساب
 async function handleAuth(action) {
     const username = document.getElementById('auth-username').value;
     const password = document.getElementById('auth-password').value;
@@ -52,6 +49,10 @@ async function handleAuth(action) {
 
     if (data.success) {
         currentUser = data.user;
+        if (!currentUser.avatar || currentUser.avatar.includes('default.png')) {
+            currentUser.avatar = DEFAULT_AVATAR;
+        }
+        localStorage.setItem('plug_chat_user', JSON.stringify(currentUser));
         document.getElementById('auth-screen').classList.add('hidden');
         document.getElementById('app-screen').classList.remove('hidden');
         socket.emit('user-online', currentUser.username);
@@ -70,7 +71,7 @@ function setupProfileUI() {
     document.getElementById('my-username').innerText = currentUser.username;
     document.getElementById('my-age').value = currentUser.age;
     document.getElementById('my-status').value = currentUser.status;
-    document.getElementById('my-avatar').src = currentUser.avatar;
+    document.getElementById('my-avatar').src = currentUser.avatar || DEFAULT_AVATAR;
 }
 
 async function uploadAvatar() {
@@ -81,6 +82,7 @@ async function uploadAvatar() {
     const res = await fetch('/api/upload', { method: 'POST', body: formData });
     const data = await res.json();
     currentUser.avatar = data.url;
+    localStorage.setItem('plug_chat_user', JSON.stringify(currentUser));
     document.getElementById('my-avatar').src = data.url;
 }
 
@@ -92,6 +94,7 @@ async function saveProfile() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ username: currentUser.username, age, status, avatar: currentUser.avatar })
     });
+    localStorage.setItem('plug_chat_user', JSON.stringify(currentUser));
     alert('تم حفظ البيانات بنجاح');
 }
 
@@ -101,12 +104,13 @@ socket.on('users-update', (users) => {
 
     users.forEach(u => {
         if (u.username === currentUser.username) return;
+        const userAvatar = u.avatar && !u.avatar.includes('default.png') ? u.avatar : DEFAULT_AVATAR;
 
         const card = document.createElement('div');
         card.className = 'user-card';
         card.innerHTML = `
             <span class="status-dot ${u.isOnline ? 'online' : 'offline'}"></span>
-            <img class="avatar" src="${u.avatar}">
+            <img class="avatar" src="${userAvatar}" onerror="this.src='${DEFAULT_AVATAR}'">
             <h4>${u.username}</h4>
             <p>العمر: ${u.age} | ${u.status}</p>
             <button onclick="sendFriendRequest('${u.username}')">طلب صداقة</button>
@@ -116,22 +120,17 @@ socket.on('users-update', (users) => {
     });
 });
 
-function sendFriendRequest(targetUser) {
-    socket.emit('send-friend-request', { from: currentUser.username, to: targetUser });
-    alert('تم إرسال طلب الصداقة');
-}
-
-// 💬 الشات الجماعي
+// 💬 الشات الجماعي والخاص
 async function sendGlobalMsg() {
     const input = document.getElementById('g-msg-input');
     if (input.value.trim()) {
-        socket.emit('send-global-msg', { sender: currentUser.username, text: input.value });
+        socket.emit('send-global-msg', { sender: currentUser.username, avatar: currentUser.avatar, text: input.value });
         input.value = '';
     }
 }
 
 function sendGlobalLike() {
-    socket.emit('send-global-msg', { sender: currentUser.username, text: '👍' });
+    socket.emit('send-global-msg', { sender: currentUser.username, avatar: currentUser.avatar, text: '👍' });
 }
 
 async function sendGlobalMedia(input) {
@@ -140,7 +139,7 @@ async function sendGlobalMedia(input) {
     formData.append('file', input.files[0]);
     const res = await fetch('/api/upload', { method: 'POST', body: formData });
     const data = await res.json();
-    socket.emit('send-global-msg', { sender: currentUser.username, media: data.url });
+    socket.emit('send-global-msg', { sender: currentUser.username, avatar: currentUser.avatar, media: data.url });
     input.value = '';
 }
 
@@ -148,7 +147,6 @@ socket.on('new-global-msg', (msg) => {
     renderMessage(document.getElementById('global-messages'), msg);
 });
 
-// 💬 الشات الخاص
 function openPrivateChat(targetUsername) {
     currentChatPartner = targetUsername;
     switchTab('chats');
@@ -169,7 +167,7 @@ async function sendPrivateMsg() {
         socket.emit('send-private-msg', {
             from: currentUser.username,
             to: currentChatPartner,
-            msgData: { sender: currentUser.username, text: input.value }
+            msgData: { sender: currentUser.username, avatar: currentUser.avatar, text: input.value }
         });
         input.value = '';
     }
@@ -179,7 +177,7 @@ function sendPrivateLike() {
     socket.emit('send-private-msg', {
         from: currentUser.username,
         to: currentChatPartner,
-        msgData: { sender: currentUser.username, text: '👍' }
+        msgData: { sender: currentUser.username, avatar: currentUser.avatar, text: '👍' }
     });
 }
 
@@ -193,27 +191,43 @@ async function sendPrivateMedia(input) {
     socket.emit('send-private-msg', {
         from: currentUser.username,
         to: currentChatPartner,
-        msgData: { sender: currentUser.username, media: data.url }
+        msgData: { sender: currentUser.username, avatar: currentUser.avatar, media: data.url }
     });
     input.value = '';
 }
 
-// 🎙️ تسجيل المايك
+// 🎙️ تسجيل الفوكال والتسجيل الزمني بالثواني
 let mediaRecorder;
 let audioChunks = [];
 let isRecording = false;
+let recTimerInterval;
+let secondsRecorded = 0;
 
 async function toggleRecord(type) {
     const btn = document.getElementById(type === 'global' ? 'g-mic-btn' : 'p-mic-btn');
+    const timerBox = document.getElementById(type === 'global' ? 'g-rec-timer' : 'p-rec-timer');
+    const timerCount = document.getElementById(type === 'global' ? 'g-timer-count' : 'p-timer-count');
     
     if (!isRecording) {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             mediaRecorder = new MediaRecorder(stream);
             audioChunks = [];
+            secondsRecorded = 0;
+            
+            timerBox.classList.remove('hidden');
+            recTimerInterval = setInterval(() => {
+                secondsRecorded++;
+                const mins = String(Math.floor(secondsRecorded / 60)).padStart(2, '0');
+                const secs = String(secondsRecorded % 60).padStart(2, '0');
+                timerCount.innerText = `${mins}:${secs}`;
+            }, 1000);
             
             mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
             mediaRecorder.onstop = async () => {
+                clearInterval(recTimerInterval);
+                timerBox.classList.add('hidden');
+                
                 const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
                 const formData = new FormData();
                 formData.append('file', audioBlob, 'voice.mp3');
@@ -221,14 +235,11 @@ async function toggleRecord(type) {
                 const res = await fetch('/api/upload', { method: 'POST', body: formData });
                 const data = await res.json();
                 
+                const payload = { sender: currentUser.username, avatar: currentUser.avatar, media: data.url, isAudio: true };
                 if (type === 'global') {
-                    socket.emit('send-global-msg', { sender: currentUser.username, media: data.url });
+                    socket.emit('send-global-msg', payload);
                 } else {
-                    socket.emit('send-private-msg', {
-                        from: currentUser.username,
-                        to: currentChatPartner,
-                        msgData: { sender: currentUser.username, media: data.url }
-                    });
+                    socket.emit('send-private-msg', { from: currentUser.username, to: currentChatPartner, msgData: payload });
                 }
             };
             
@@ -236,7 +247,7 @@ async function toggleRecord(type) {
             isRecording = true;
             btn.classList.add('recording');
         } catch (err) {
-            alert('يرجى منح صلاحية استخدام المايكروفون');
+            alert('يرجى السماح بصلاحية المايكروفون');
         }
     } else {
         mediaRecorder.stop();
@@ -245,27 +256,79 @@ async function toggleRecord(type) {
     }
 }
 
-// عرض الرسالة بالأنواع المختلفة
+// 🎨 عرض الرسالة وتنسيقها على طريقة فيسبوك مع زر المشغل للتسجيل الصوتي
 function renderMessage(container, msg) {
-    const el = document.createElement('div');
+    const wrapper = document.createElement('div');
     const isMe = msg.sender === currentUser.username;
-    el.className = `msg ${isMe ? 'msg-me' : 'msg-them'}`;
+    wrapper.className = `msg-wrapper ${isMe ? 'me' : 'them'}`;
 
-    let content = `<b>${msg.sender}:</b> ${msg.text || ''}`;
+    const avatarUrl = msg.avatar && !msg.avatar.includes('default.png') ? msg.avatar : DEFAULT_AVATAR;
+
+    let contentHtml = ``;
+    if (msg.text) contentHtml += `<div>${msg.text}</div>`;
     if (msg.media) {
         if (msg.media.match(/\.(jpeg|jpg|gif|png)$/i)) {
-            content += `<br><img src="${msg.media}" style="max-width:100%; border-radius:10px; margin-top:5px;">`;
+            contentHtml += `<img src="${msg.media}" style="max-width:200px; border-radius:12px; margin-top:5px;">`;
         } else if (msg.media.match(/\.(mp4|webm)$/i)) {
-            content += `<br><video src="${msg.media}" controls style="max-width:100%; border-radius:10px; margin-top:5px;"></video>`;
-        } else if (msg.media.match(/\.(mp3|ogg|wav)$/i)) {
-            content += `<br><audio src="${msg.media}" controls style="max-width:100%; margin-top:5px;"></audio>`;
+            contentHtml += `<video src="${msg.media}" controls style="max-width:200px; border-radius:12px; margin-top:5px;"></video>`;
+        } else if (msg.media.match(/\.(mp3|ogg|wav)$/i) || msg.isAudio) {
+            contentHtml += `
+                <div class="custom-audio-player">
+                    <button onclick="toggleAudio(this, '${msg.media}')">▶️ تشغيل</button>
+                    <audio src="${msg.media}" onended="resetAudioBtn(this)"></audio>
+                </div>
+            `;
         }
     }
-    el.innerHTML = content;
-    container.appendChild(el);
+
+    wrapper.innerHTML = `
+        <img class="avatar" src="${avatarUrl}" onerror="this.src='${DEFAULT_AVATAR}'">
+        <div class="msg-body">
+            <span class="msg-author">${msg.sender}</span>
+            <div class="msg-bubble" onclick="openReactions(this)">
+                ${contentHtml}
+            </div>
+        </div>
+    `;
+
+    container.appendChild(wrapper);
     container.scrollTop = container.scrollHeight;
 }
 
-function startCall() {
-    alert(`جاري الاتصال بـ ${currentChatPartner}...`);
+// تشغيل الفوكال وإيقافه عبر الزر
+function toggleAudio(btn, src) {
+    const audio = btn.nextElementSibling;
+    if (audio.paused) {
+        audio.play();
+        btn.innerText = '⏸️ إيقاف';
+    } else {
+        audio.pause();
+        btn.innerText = '▶️ تشغيل';
+    }
+}
+
+function resetAudioBtn(audio) {
+    audio.previousElementSibling.innerText = '▶️ تشغيل';
+}
+
+// 😃 فتح التفاعلات عند النقر على الرسالة
+function openReactions(bubble) {
+    selectedMsgElement = bubble;
+    document.getElementById('reaction-modal').classList.remove('hidden');
+}
+
+function closeModal() {
+    document.getElementById('reaction-modal').classList.add('hidden');
+}
+
+function reactToMsg(emoji) {
+    if (!selectedMsgElement) return;
+    let badge = selectedMsgElement.querySelector('.reaction-badge');
+    if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'reaction-badge';
+        selectedMsgElement.appendChild(badge);
+    }
+    badge.innerText = emoji;
+    closeModal();
 }
