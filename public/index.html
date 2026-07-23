@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plug Chat</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+
+    <div id="auth-screen" class="card">
+        <h2>⚡ Plug Chat ⚡</h2>
+        <input type="text" id="auth-username" placeholder="اسم المستخدم">
+        <input type="password" id="auth-password" placeholder="كلمة السر">
+        <div id="register-fields">
+            <input type="number" id="auth-age" placeholder="العمر" value="20">
+            <select id="auth-status">
+                <option value="أعزب">أعزب</option>
+                <option value="متزوج">متزوج</option>
+                <option value="مخطوب">مخطوب</option>
+            </select>
+        </div>
+        <button onclick="handleAuth('login')">تسجيل الدخول</button>
+        <button onclick="handleAuth('register')" class="btn-alt">إنشاء حساب جديد</button>
+    </div>
+
+    <div id="app-screen" class="hidden">
+        <nav class="top-nav">
+            <div class="logo">Plug Chat</div>
+            <div class="nav-icons">
+                <button onclick="switchTab('profile')" title="الملف الشخصي">👤</button>
+                <button onclick="switchTab('friends')" title="الأصدقاء">👥 <span id="req-count"></span></button>
+                <button onclick="switchTab('users')" title="المستخدمين">🌐</button>
+                <button onclick="switchTab('chats')" title="الدردشات الخاصة">💬</button>
+                <button onclick="switchTab('global')" title="الشات الجماعي">📢</button>
+            </div>
+        </nav>
+
+        <main class="content">
+            <section id="tab-profile" class="tab-page">
+                <h3>الملف الشخصي</h3>
+                <div class="profile-box">
+                    <img id="my-avatar" src="" width="100" height="100">
+                    <input type="file" id="avatar-input" onchange="uploadAvatar()">
+                    <p>الاسم: <b id="my-username"></b></p>
+                    <label>العمر: <input type="number" id="my-age"></label>
+                    <label>الحالة الاجتماعية: 
+                        <select id="my-status">
+                            <option value="أعزب">أعزب</option>
+                            <option value="متزوج">متزوج</option>
+                            <option value="مخطوب">مخطوب</option>
+                        </select>
+                    </label>
+                    <button onclick="saveProfile()">حفظ التغيرات</button>
+                </div>
+            </section>
+
+            <section id="tab-friends" class="tab-page hidden">
+                <h3>طلبات الصداقة</h3>
+                <div id="requests-list"></div>
+                <hr>
+                <h3>قائمة الأصدقاء</h3>
+                <div id="friends-list"></div>
+            </section>
+
+            <section id="tab-users" class="tab-page hidden">
+                <h3>جميع مستخدمي المنصة</h3>
+                <div id="users-grid" class="grid"></div>
+            </section>
+
+            <section id="tab-chats" class="tab-page hidden">
+                <h3>المحادثات الخاصة</h3>
+                <div id="active-chats-list"></div>
+                <div id="private-chat-window" class="chat-window hidden">
+                    <div class="chat-header">
+                        <span id="chat-with-name"></span>
+                        <button onclick="startCall()">📞 اتصال صوتي</button>
+                    </div>
+                    <div id="private-messages" class="messages-area"></div>
+                    <div class="chat-inputs">
+                        <input type="text" id="p-msg-input" placeholder="اكتب رسالة...">
+                        <input type="file" id="p-file-input">
+                        <button onclick="sendPrivateMsg()">إرسال</button>
+                    </div>
+                </div>
+            </section>
+
+            <section id="tab-global" class="tab-page hidden">
+                <h3>الشات الجماعي العام</h3>
+                <div id="global-messages" class="messages-area"></div>
+                <div class="chat-inputs">
+                    <input type="text" id="g-msg-input" placeholder="اكتب للجميع...">
+                    <input type="file" id="g-file-input">
+                    <button onclick="sendGlobalMsg()">إرسال</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
