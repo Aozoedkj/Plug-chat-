@@ -1,153 +1,209 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const path = require('path');
 const multer = require('multer');
 const fs = require('fs');
-const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+    maxHttpBufferSize: 1e8 // للسماح برفع الملفات والفوكال الكبيرة
+});
 
-const PORT = process.env.PORT || 3000;
-const DB_FILE = './database.json';
+// إعداد مجلد uploads للحفظ
+const uploadDir = path.join(__dirname, 'public/uploads');
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
 
+// إعداد التخزين للملفات واللقطات والصوتيات
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, 'uploads/'),
+    destination: (req, file, cb) => cb(null, 'public/uploads/'),
     filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
 });
 const upload = multer({ storage });
 
 app.use(express.json());
-app.use(express.static('public'));
-app.use('/uploads', express.static('uploads'));
+app.use(express.static(path.join(__dirname, 'public')));
 
-if (!fs.existsSync('./uploads')) fs.mkdirSync('./uploads');
+// 🧠 قواعد البيانات المؤقتة في الذاكرة (Memory DB)
+let users = [];           // [{ username, password, age, status, avatar, isOnline }]
+let globalMessages = [];  // [ { sender, avatar, text, media, isAudio, duration, replyTo } ]
+let privateMessages = {}; // { 'user1_user2': [ ...msgs ] }
+let friendRequests = {};  // { 'username': ['fromUser1', 'fromUser2'] }
+let friendsList = {};     // { 'username': ['friend1', 'friend2'] }
 
-function loadData() {
-    if (!fs.existsSync(DB_FILE)) {
-        fs.writeFileSync(DB_FILE, JSON.stringify({ users: [], globalChat: [], privateChats: {} }));
+// 1️⃣ مسار تسجيل الدخول وإنشاء الحساب
+app.post('/api/auth', (req, res) => {
+    const { username, password, action, age, status } = req.body;
+    let user = users.find(u => u.username === username);
+
+    if (action === 'register') {
+        if (user) return res.json({ success: false, msg: 'اسم المستخدم مأخوذ بالفعل!' });
+        user = { 
+            username, 
+            password, 
+            age: age || 20, 
+            status: status || 'أعزب', 
+            avatar: '/kullanici.jpg', 
+            isOnline: false 
+        };
+        users.push(user);
+        friendRequests[username] = [];
+        friendsList[username] = [];
+        return res.json({ success: true, user });
     }
-    return JSON.parse(fs.readFileSync(DB_FILE));
-}
 
-function saveData(data) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-}
-
-app.post('/api/upload', upload.single('file'), (req, res) => {
-    if (!req.file) return res.status(400).send('لم يتم رفع أي ملف');
-    res.json({ url: `/uploads/${req.file.filename}`, type: req.file.mimetype });
+    if (action === 'login') {
+        if (!user || user.password !== password) {
+            return res.json({ success: false, msg: 'اسم المستخدم أو كلمة السر خاطئة!' });
+        }
+        return res.json({ success: true, user });
+    }
 });
 
-let activeUsers = {};
+// 2️⃣ جلب جميع مستخدمي المنصة (لضمان ظهورهم دائماً)
+app.get('/api/users', (req, res) => {
+    res.json(users.map(u => ({
+        username: u.username,
+        age: u.age,
+        status: u.status,
+        avatar: u.avatar || '/kullanici.jpg',
+        isOnline: u.isOnline
+    })));
+});
 
-io.on('connection', (socket) => {
-    socket.on('user-online', (username) => {
-        activeUsers[socket.id] = username;
-        let data = loadData();
-        let user = data.users.find(u => u.username === username);
-        if (user) user.isOnline = true;
-        saveData(data);
-        io.emit('users-update', data.users);
+// 3️⃣ جلب تفاصيل مستخدم معين
+app.get('/api/user-info', (req, res) => {
+    const u = users.find(x => x.username === req.query.username);
+    if (u) {
+        res.json({ username: u.username, age: u.age, status: u.status, avatar: u.avatar || '/kullanici.jpg' });
+    } else {
+        res.json({ username: req.query.username, avatar: '/kullanici.jpg' });
+    }
+});
+
+// 4️⃣ حفظ وإرجاع سجل الشات الجماعي عند الريفرش
+app.get('/api/global-history', (req, res) => {
+    res.json(globalMessages);
+});
+
+// 5️⃣ حفظ وإرجاع سجل المحادثات الخاصة عند الريفرش
+app.get('/api/private-history', (req, res) => {
+    const { user1, user2 } = req.query;
+    const chatKey = [user1, user2].sort().join('_');
+    res.json(privateMessages[chatKey] || []);
+});
+
+// 6️⃣ قائمة المحادثات لتبويب الرسائل الخاصة (Messenger Style)
+app.get('/api/my-chats', (req, res) => {
+    const username = req.query.username;
+    const myFriends = friendsList[username] || [];
+    
+    const chats = myFriends.map(fName => {
+        const friendUser = users.find(u => u.username === fName) || {};
+        const chatKey = [username, fName].sort().join('_');
+        const msgs = privateMessages[chatKey] || [];
+        const lastMsgObj = msgs[msgs.length - 1];
+        
+        let lastMsg = 'لا توجد رسائل بعد';
+        if (lastMsgObj) {
+            if (lastMsgObj.text) lastMsg = lastMsgObj.text;
+            else if (lastMsgObj.isAudio) lastMsg = '🎙️ رسالة صوتية';
+            else if (lastMsgObj.media) lastMsg = '📷 صورة/فيديو';
+        }
+
+        return {
+            username: fName,
+            avatar: friendUser.avatar || '/kullanici.jpg',
+            lastMsg
+        };
     });
 
+    res.json(chats);
+});
+
+// 7️⃣ طلبات وقائمة الأصدقاء
+app.post('/api/friend-request', (req, res) => {
+    const { from, to } = req.body;
+    if (!friendRequests[to]) friendRequests[to] = [];
+    if (!friendRequests[to].includes(from)) {
+        friendRequests[to].push(from);
+    }
+    res.json({ success: true, msg: 'تم إرسال طلب الصداقة' });
+});
+
+app.get('/api/friends-data', (req, res) => {
+    const username = req.query.username;
+    res.json({
+        requests: friendRequests[username] || [],
+        friends: friendsList[username] || []
+    });
+});
+
+app.post('/api/respond-friend-request', (req, res) => {
+    const { username, targetUser, action } = req.body;
+    
+    // إزالة الطلب
+    if (friendRequests[username]) {
+        friendRequests[username] = friendRequests[username].filter(u => u !== targetUser);
+    }
+
+    if (action === 'accept') {
+        if (!friendsList[username]) friendsList[username] = [];
+        if (!friendsList[targetUser]) friendsList[targetUser] = [];
+        
+        if (!friendsList[username].includes(targetUser)) friendsList[username].push(targetUser);
+        if (!friendsList[targetUser].includes(username)) friendsList[targetUser].push(username);
+    }
+
+    res.json({ success: true });
+});
+
+// 8️⃣ رفع الصور والوسائط والصوتيات (الفوكال)
+app.post('/api/upload', upload.single('file'), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'لم يتم رفع ملف' });
+    const fileUrl = `/uploads/${req.file.filename}`;
+    res.json({ url: fileUrl });
+});
+
+// ⚡ Socket.io للمحادثات المباشرة والتزامن Real-time
+io.on('connection', (socket) => {
+    let connectedUser = null;
+
+    socket.on('user-online', (username) => {
+        connectedUser = username;
+        const u = users.find(x => x.username === username);
+        if (u) u.isOnline = true;
+        io.emit('update-user-status', { username, isOnline: true });
+    });
+
+    // الشات الجماعي
     socket.on('send-global-msg', (msgData) => {
-        let data = loadData();
-        data.globalChat.push(msgData);
-        saveData(data);
+        globalMessages.push(msgData);
+        if (globalMessages.length > 200) globalMessages.shift(); // حفظ آخر 200 رسالة
         io.emit('new-global-msg', msgData);
     });
 
+    // الشات الخاص
     socket.on('send-private-msg', ({ from, to, msgData }) => {
-        let data = loadData();
-        let chatKey = [from, to].sort().join('_');
-        if (!data.privateChats[chatKey]) data.privateChats[chatKey] = [];
-        data.privateChats[chatKey].push(msgData);
-        saveData(data);
+        const chatKey = [from, to].sort().join('_');
+        if (!privateMessages[chatKey]) privateMessages[chatKey] = [];
+        privateMessages[chatKey].push(msgData);
 
+        // إرسال للطرفين فورياً
         io.emit(`private-msg-${chatKey}`, msgData);
-        io.emit(`chat-notification-${to}`, from);
-    });
-
-    socket.on('send-friend-request', ({ from, to }) => {
-        let data = loadData();
-        let target = data.users.find(u => u.username === to);
-        if (target && !target.requests.includes(from) && !target.friends.includes(from)) {
-            target.requests.push(from);
-            saveData(data);
-            io.emit(`update-requests-${to}`);
-        }
-    });
-
-    socket.on('accept-friend-request', ({ user, friend }) => {
-        let data = loadData();
-        let u1 = data.users.find(u => u.username === user);
-        let u2 = data.users.find(u => u.username === friend);
-
-        if (u1 && u2) {
-            u1.requests = u1.requests.filter(r => r !== friend);
-            if (!u1.friends.includes(friend)) u1.friends.push(friend);
-            if (!u2.friends.includes(user)) u2.friends.push(user);
-            saveData(data);
-            io.emit('users-update', data.users);
-            io.emit(`update-requests-${user}`);
-        }
     });
 
     socket.on('disconnect', () => {
-        let username = activeUsers[socket.id];
-        if (username) {
-            let data = loadData();
-            let user = data.users.find(u => u.username === username);
-            if (user) user.isOnline = false;
-            saveData(data);
-            delete activeUsers[socket.id];
-            io.emit('users-update', data.users);
+        if (connectedUser) {
+            const u = users.find(x => x.username === connectedUser);
+            if (u) u.isOnline = false;
+            io.emit('update-user-status', { username: connectedUser, isOnline: false });
         }
     });
 });
 
-app.post('/api/auth', (req, res) => {
-    const { username, password, action, age, status } = req.body;
-    let data = loadData();
-
-    if (action === 'register') {
-        if (data.users.find(u => u.username === username)) {
-            return res.json({ success: false, msg: 'اسم المستخدم مستعمل من قبل' });
-        }
-        let newUser = {
-            username,
-            password,
-            age: age || 18,
-            status: status || 'أعزب',
-            avatar: '/uploads/default.png',
-            friends: [],
-            requests: [],
-            isOnline: false
-        };
-        data.users.push(newUser);
-        saveData(data);
-        return res.json({ success: true, user: newUser });
-    } else {
-        let user = data.users.find(u => u.username === username && u.password === password);
-        if (user) return res.json({ success: true, user });
-        return res.json({ success: false, msg: 'خطأ في اسم المستخدم أو كلمة السر' });
-    }
-});
-
-app.post('/api/update-profile', (req, res) => {
-    const { username, age, status, avatar } = req.body;
-    let data = loadData();
-    let user = data.users.find(u => u.username === username);
-    if (user) {
-        if (age) user.age = age;
-        if (status) user.status = status;
-        if (avatar) user.avatar = avatar;
-        saveData(data);
-        return res.json({ success: true, user });
-    }
-    res.json({ success: false });
-});
-
-server.listen(PORT, () => console.log(`🚀 Plug Chat يعمل الآن على المنفذ ${PORT}`));
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
