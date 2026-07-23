@@ -5,7 +5,7 @@ let isRegisterMode = false;
 let selectedMsgElement = null;
 
 // المسار الافتراضي للصورة المحددة
-const DEFAULT_AVATAR = '/aziz/profil.png';
+const DEFAULT_AVATAR = '/kullanici.jpg';
 
 // 🔄 استعادة الجلسة وتجنب الخروج عند الـ Refresh
 window.addEventListener('DOMContentLoaded', () => {
