@@ -17,7 +17,7 @@ if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-// 📁 نظام التخزين الدائم بملف JSON
+// 📁 نظام التخزين الدائم
 const DATA_FILE = path.join(__dirname, 'db.json');
 
 function loadData() {
@@ -40,7 +40,7 @@ function saveData() {
 
 let db = loadData();
 
-// ضبط حالة الاتصال عند تشغيل السيرفر
+// إعادة ضبط الاتصال عند الإقلاع
 db.users.forEach(u => u.isOnline = false);
 
 const storage = multer.diskStorage({
@@ -267,7 +267,7 @@ io.on('connection', (socket) => {
     });
 });
 
-// ⚠️ تعديل المنفذ ليتوافق مع Render تماماً
+// المنفذ الخاص بـ Render
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
     console.log(`🚀 Plug Chat يعمل الآن على المنفذ ${PORT}`);
